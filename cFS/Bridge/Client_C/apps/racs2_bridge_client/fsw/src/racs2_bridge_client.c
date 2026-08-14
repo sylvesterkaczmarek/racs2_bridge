@@ -252,6 +252,7 @@ void RACS2_BRIDGE_CLIENT_Init(void)
     char line[64];
     char key[16];
     char value[16];
+    char extra;
     bool has_wss_uri = false;
     bool has_wss_port = false;
 
@@ -275,7 +276,7 @@ void RACS2_BRIDGE_CLIENT_Init(void)
             continue;
         }
 
-        if (sscanf(line, "%15[^=]=%15s", key, value) != 2)
+        if (sscanf(line, "%15[^=]=%15s %c", key, value, &extra) != 2)
         {
             OS_printf("RACS2_BRIDGE_CLIENT: ignoring malformed config line\n");
             continue;
