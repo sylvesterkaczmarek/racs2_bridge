@@ -98,10 +98,7 @@ static int callback_example( struct lws *wsi, enum lws_callback_reasons reason, 
             // Send message
             CFE_SB_TimeStampMsg((CFE_SB_Msg_t *) &RACS2_UserMsgPkt);
             int32 status = CFE_SB_SendMsg((CFE_SB_Msg_t *) &RACS2_UserMsgPkt);
-            // OS_printf("RACS2_BRIDGE_CLIENT: Sent message, MID = [0x%x], sample_command_count = %d\n",
-            //     CFE_SB_GetMsgId((CFE_SB_MsgPtr_t) &RACS2_UserMsgPkt),
-            //     RACS2_UserMsgPkt.sample_command_count
-            //     );
+            // OS_printf("[Recv]: %s\n", (char*)in);
             OS_printf("RACS2_BRIDGE_CLIENT: Sent message, MID = [0x%x]\n",
                 CFE_SB_GetMsgId((CFE_SB_MsgPtr_t) &RACS2_UserMsgPkt)
             );
@@ -250,9 +247,10 @@ void RACS2_BRIDGE_CLIENT_Init(void)
     */
     FILE *fp;
     char line[64];
-    char *str;
     char key[16];
     char value[16];
+    bool has_wss_uri = false;
+    bool has_wss_port = false;
 
     if ((fp = fopen("cf/racs2_bridge_config.txt", "r")) == NULL)
     {
@@ -262,23 +260,55 @@ void RACS2_BRIDGE_CLIENT_Init(void)
 
     char *ch_wss_uri  = "wss_uri";
     char *ch_wss_port = "wss_port";
-    while ((str = fgets(line, 128, fp)) != NULL) {
-        sscanf(line, "%[^=]=%s", key, value);
+    while (fgets(line, sizeof(line), fp) != NULL)
+    {
+        if (strchr(line, '\n') == NULL && !feof(fp))
+        {
+            int ch;
+            while ((ch = fgetc(fp)) != '\n' && ch != EOF)
+            {
+            }
+            OS_printf("RACS2_BRIDGE_CLIENT: config line is too long\n");
+            continue;
+        }
+
+        if (sscanf(line, "%15[^=]=%15s", key, value) != 2)
+        {
+            OS_printf("RACS2_BRIDGE_CLIENT: ignoring malformed config line\n");
+            continue;
+        }
+
         // read uri
         if (strcmp(key, ch_wss_uri) == 0)
         {
-            strcpy(wss_uri, value);
+            snprintf(wss_uri, sizeof(wss_uri), "%s", value);
+            has_wss_uri = true;
             OS_printf("wss_uri = [%s]\n", wss_uri);
         }
         // read port
         if (strcmp(key, ch_wss_port) == 0)
         {
-            wss_port = atoi(value);
+            char *endptr;
+            unsigned long parsed_port = strtoul(value, &endptr, 10);
+            if (endptr == value || *endptr != '\0' || parsed_port == 0 || parsed_port > 65535UL)
+            {
+                OS_printf("RACS2_BRIDGE_CLIENT: invalid wss_port [%s]\n", value);
+                fclose(fp);
+                exit(-1);
+            }
+            wss_port = (uint16_t) parsed_port;
+            has_wss_port = true;
             OS_printf("wss_port = [%d]\n", wss_port);
         }
     }
 
     fclose(fp);
+
+    if (!has_wss_uri || !has_wss_port)
+    {
+        OS_printf("RACS2_BRIDGE_CLIENT: config requires wss_uri and wss_port\n");
+        exit(-1);
+    }
 
     /*
     ** Register the app with Executive services
