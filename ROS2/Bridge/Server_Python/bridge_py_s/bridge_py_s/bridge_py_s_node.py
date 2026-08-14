@@ -7,7 +7,7 @@ import asyncio
 import websockets
 
 from racs2_msg.msg import RACS2UserMsg
-from bridge_py_s.protocol import ProtocolError, pack_frame, unpack_frame
+from bridge_py_s.protocol import HEADER_LENGTH, ProtocolError, pack_frame, unpack_frame
 
 
 # ------------------------------------------------------------------------------
@@ -49,7 +49,7 @@ class _BridgePyS(Node):
             )
             return
 
-        msg_header = bytearray(32)
+        msg_header = bytearray(HEADER_LENGTH)
         msg_header[0:2] = aMsg.cfs_message_id.to_bytes(2, 'big')
         try:
             msg = pack_frame(msg_header, body)
@@ -66,7 +66,7 @@ class _BridgePyS(Node):
                 gWebSocket = None
 
     def do_publish(self, topic_name, aMessage):
-        if topic_name not in self.publisher_info:
+        if not topic_name in self.publisher_info:
             self.get_logger().error(f"Publisher for topic[{topic_name}] does not exit")
             return
         self.publisher_info[topic_name].publish(aMessage)
@@ -103,7 +103,7 @@ async def wss_recv(websocket):
     global gWebSocket
     gWebSocket = websocket
 
-    if gWebSocket is None:
+    if (gWebSocket is None):
         gLogger.error("WebSocket is error.")
         return
     try:
