@@ -98,7 +98,10 @@ static int callback_example( struct lws *wsi, enum lws_callback_reasons reason, 
             // Send message
             CFE_SB_TimeStampMsg((CFE_SB_Msg_t *) &RACS2_UserMsgPkt);
             int32 status = CFE_SB_SendMsg((CFE_SB_Msg_t *) &RACS2_UserMsgPkt);
-            // OS_printf("[Recv]: %s\n", (char*)in);
+            // OS_printf("RACS2_BRIDGE_CLIENT: Sent message, MID = [0x%x], sample_command_count = %d\n",
+            //     CFE_SB_GetMsgId((CFE_SB_MsgPtr_t) &RACS2_UserMsgPkt),
+            //     RACS2_UserMsgPkt.sample_command_count
+            //     );
             OS_printf("RACS2_BRIDGE_CLIENT: Sent message, MID = [0x%x]\n",
                 CFE_SB_GetMsgId((CFE_SB_MsgPtr_t) &RACS2_UserMsgPkt)
             );
