@@ -7,12 +7,14 @@ import asyncio
 import websockets
 
 from racs2_msg.msg import RACS2UserMsg
+from bridge_py_s.protocol import ProtocolError, pack_frame, unpack_frame
 
 
 # ------------------------------------------------------------------------------
 gNode = None
 
 gLogger = rclpy.logging.get_logger("RACS2Bridge")
+
 
 class _BridgePyS(Node):
 
@@ -40,13 +42,20 @@ class _BridgePyS(Node):
 
     # ROS2 Topic
     async def subscription_callback(self, aMsg):
-        # self.get_logger().info('Recv data')
-        bMessage = RACS2UserMsg()
-        bMessage.body_data = aMsg.body_data
-        # fill message id into header
+        body = b''.join(aMsg.body_data)
+        if aMsg.body_data_length != len(body):
+            self.get_logger().error(
+                "body_data_length does not match the ROS2 message body"
+            )
+            return
+
         msg_header = bytearray(32)
         msg_header[0:2] = aMsg.cfs_message_id.to_bytes(2, 'big')
-        msg = msg_header+b''.join(aMsg.body_data)
+        try:
+            msg = pack_frame(msg_header, body)
+        except ProtocolError as e:
+            self.get_logger().error(f"Invalid bridge message: {e}")
+            return
 
         global gWebSocket
         if gWebSocket is not None:
@@ -57,7 +66,7 @@ class _BridgePyS(Node):
                 gWebSocket = None
 
     def do_publish(self, topic_name, aMessage):
-        if not topic_name in self.publisher_info:
+        if topic_name not in self.publisher_info:
             self.get_logger().error(f"Publisher for topic[{topic_name}] does not exit")
             return
         self.publisher_info[topic_name].publish(aMessage)
@@ -69,6 +78,7 @@ class _BridgePyS(Node):
         self.publisher_info[topic_name] = self.create_publisher(
             RACS2UserMsg, topic_name, 10)
         self.get_logger().info(f"Created publisher for topic[{topic_name}]")
+
 
 async def spin_once(aNode):
     rclpy.spin_once(aNode, timeout_sec=0)
@@ -93,13 +103,18 @@ async def wss_recv(websocket):
     global gWebSocket
     gWebSocket = websocket
 
-    if (gWebSocket is None):
+    if gWebSocket is None:
         gLogger.error("WebSocket is error.")
         return
     try:
         async for recv_message in websocket:
-            gLogger.info(f'WssRecv: {recv_message}')
-            topic_name = recv_message[0:32].decode()
+            try:
+                header, body = unpack_frame(recv_message)
+                topic_name = header.split(b'\0', 1)[0].decode('utf-8')
+            except (ProtocolError, UnicodeDecodeError) as e:
+                gLogger.error(f"Invalid websocket frame: {e}")
+                continue
+
             gLogger.info(f"topic name = {topic_name}")
 
             if gNode is None:
@@ -107,9 +122,8 @@ async def wss_recv(websocket):
                 continue
             gNode.register_publisher(topic_name)
             publish_message = RACS2UserMsg()
-            publish_message.body_data_length = len(recv_message) - 32
-            bytes_list = [bytes([elem]) for elem in recv_message[32:]]
-            publish_message.body_data = bytes_list
+            publish_message.body_data_length = len(body)
+            publish_message.body_data = [bytes([elem]) for elem in body]
             gNode.do_publish(topic_name, publish_message)
     except websockets.ConnectionClosedOK:
         gLogger.warning("Websocket closed properly.")
